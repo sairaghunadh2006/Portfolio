@@ -315,7 +315,7 @@ function initHamburger() {
     }
   });
 
-  links.querySelectorAll('.nav-link').forEach(link => {
+  links.querySelectorAll('.nav-link, .btn-resume').forEach(link => {
     link.addEventListener('click', () => {
       links.classList.remove('open');
       const spans = btn.querySelectorAll('span');
