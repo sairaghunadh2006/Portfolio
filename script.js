@@ -238,24 +238,38 @@ function initTypingEffect() {
 }
 
 /* ══════════════════════════════════════════════
-   6. SCROLL ANIMATIONS (AOS-like)
+   6. SCROLL ANIMATIONS (reliable scroll-based)
 ══════════════════════════════════════════════ */
 function initScrollAnimations() {
-  const elements = document.querySelectorAll('[data-aos]');
+  const elements = Array.from(document.querySelectorAll('[data-aos]'));
+  const vh = window.innerHeight;
 
-  const observer = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-      if (entry.isIntersecting) {
-        const delay = entry.target.getAttribute('data-aos-delay') || 0;
-        setTimeout(() => {
-          entry.target.classList.add('aos-animate');
-        }, parseInt(delay));
-        observer.unobserve(entry.target);
+  // Mark elements below the fold as will-animate (CSS hides them)
+  // Elements already in view get shown immediately
+  elements.forEach(el => {
+    const rect = el.getBoundingClientRect();
+    if (rect.top > vh * 0.95) {
+      el.classList.add('will-animate'); // hide below-fold elements
+    } else {
+      el.classList.add('aos-animate'); // show in-view elements immediately
+    }
+  });
+
+  function checkVisibility() {
+    const vh = window.innerHeight;
+    elements.forEach(el => {
+      if (el.classList.contains('aos-animate')) return;
+      const rect = el.getBoundingClientRect();
+      if (rect.top < vh * 0.95) {
+        el.classList.add('will-animate');
+        const delay = parseInt(el.getAttribute('data-aos-delay') || 0);
+        setTimeout(() => el.classList.add('aos-animate'), delay);
       }
     });
-  }, { threshold: 0.12, rootMargin: '0px 0px -50px 0px' });
+  }
 
-  elements.forEach(el => observer.observe(el));
+  window.addEventListener('scroll', checkVisibility, { passive: true });
+  setTimeout(checkVisibility, 300);
 }
 
 /* ══════════════════════════════════════════════
@@ -470,4 +484,225 @@ document.querySelectorAll('a[href^="#"]').forEach(anchor => {
   window.addEventListener('scroll', () => {
     btn.style.opacity = window.scrollY > 400 ? '1' : '0.3';
   }, { passive: true });
+})();
+
+/* ══════════════════════════════════════════
+   16. VISITOR CONTACT FORM — SAVE & ADMIN
+══════════════════════════════════════════ */
+(function initContactForm() {
+  const STORAGE_KEY = 'sai_portfolio_visitors';
+
+  // ── Helpers ──────────────────────────────
+  function getSubmissions() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
+    catch(e) { return []; }
+  }
+  function saveSubmissions(arr) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
+  }
+  function openModal(id) {
+    document.getElementById(id).classList.add('cf-active');
+  }
+  function closeModal(id) {
+    document.getElementById(id).classList.remove('cf-active');
+  }
+
+  // ── Form Validation & Submit ──────────────
+  const form     = document.getElementById('visitor-contact-form');
+  const btnText  = document.querySelector('.btn-submit-text');
+  const btnLoad  = document.querySelector('.btn-submit-loading');
+
+  function validate() {
+    let ok = true;
+
+    // Name
+    const name = document.getElementById('visitor-name').value.trim();
+    const fgName = document.getElementById('fg-name');
+    if (name.length < 2) {
+      fgName.classList.add('has-error'); ok = false;
+    } else {
+      fgName.classList.remove('has-error');
+    }
+
+    // Email
+    const email = document.getElementById('visitor-email').value.trim();
+    const fgEmail = document.getElementById('fg-email');
+    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    if (!emailOk) {
+      fgEmail.classList.add('has-error'); ok = false;
+    } else {
+      fgEmail.classList.remove('has-error');
+    }
+
+    // Phone
+    const phone = document.getElementById('visitor-phone').value.trim();
+    const fgPhone = document.getElementById('fg-phone');
+    const phoneOk = /^[\+\d\s\-\(\)]{7,15}$/.test(phone);
+    if (!phoneOk) {
+      fgPhone.classList.add('has-error'); ok = false;
+    } else {
+      fgPhone.classList.remove('has-error');
+    }
+
+    return ok;
+  }
+
+  // Live remove error on typing
+  ['visitor-name','visitor-email','visitor-phone'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', () => {
+      el.closest('.form-group').classList.remove('has-error');
+    });
+  });
+
+  if (form) {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!validate()) return;
+
+      // Show loading
+      btnText.style.display = 'none';
+      btnLoad.style.display = 'flex';
+
+      const entry = {
+        name    : document.getElementById('visitor-name').value.trim(),
+        email   : document.getElementById('visitor-email').value.trim(),
+        phone   : document.getElementById('visitor-phone').value.trim(),
+        message : document.getElementById('visitor-message').value.trim(),
+        time    : new Date().toLocaleString('en-IN', { dateStyle:'medium', timeStyle:'short' })
+      };
+
+      // ── Send to Formspree (email notification to sairaghunadh2006@gmail.com) ──
+      const FORMSPREE_ENDPOINT = 'https://formspree.io/f/mzdqggnw';
+
+      let emailSent = false;
+      try {
+        const res = await fetch(FORMSPREE_ENDPOINT, {
+          method : 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body   : JSON.stringify({
+            name   : entry.name,
+            email  : entry.email,
+            phone  : entry.phone,
+            message: entry.message || '(no message)'
+          })
+        });
+        emailSent = res.ok;
+      } catch(err) {
+        console.warn('Formspree send failed:', err);
+      }
+
+      // ── Save to localStorage (admin panel) ────────────────────────
+      const all = getSubmissions();
+      all.unshift(entry);
+      saveSubmissions(all);
+
+      // ── Reset form & button ───────────────────────────────────────
+      form.reset();
+      ['fg-name','fg-email','fg-phone','fg-message'].forEach(id => {
+        const fg = document.getElementById(id);
+        if (fg) fg.classList.remove('has-error');
+      });
+      btnText.style.display = 'flex';
+      btnLoad.style.display = 'none';
+
+      // ── Populate & show success modal ─────────────────────────────
+      document.getElementById('sum-name').textContent  = entry.name;
+      document.getElementById('sum-email').textContent = entry.email;
+      document.getElementById('sum-phone').textContent = entry.phone;
+      const msgRow = document.getElementById('sum-msg-row');
+      if (entry.message) {
+        document.getElementById('sum-message').textContent = entry.message;
+        msgRow.style.display = 'flex';
+      } else {
+        msgRow.style.display = 'none';
+      }
+
+      openModal('cf-success-modal');
+    });
+  }
+
+  // Close success modal
+  const closeSuccessBtn = document.getElementById('cf-close-success');
+  const okBtn           = document.getElementById('cf-ok-btn');
+  if (closeSuccessBtn) closeSuccessBtn.addEventListener('click', () => closeModal('cf-success-modal'));
+  if (okBtn) okBtn.addEventListener('click', () => closeModal('cf-success-modal'));
+  document.getElementById('cf-success-modal')?.addEventListener('click', function(e) {
+    if (e.target === this) closeModal('cf-success-modal');
+  });
+
+  // ── Admin Panel ───────────────────────────
+  function renderAdminList() {
+    const list   = document.getElementById('admin-submissions-list');
+    const empty  = document.getElementById('admin-empty-msg');
+    const badge  = document.getElementById('admin-count-badge');
+    const all    = getSubmissions();
+
+    badge.textContent = all.length;
+
+    if (all.length === 0) {
+      list.innerHTML = '';
+      empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+    list.innerHTML = all.map((s, i) => `
+      <div class="admin-entry">
+        <div class="admin-entry-header">
+          <span class="admin-entry-name">${s.name}</span>
+          <span class="admin-entry-time">${s.time}</span>
+        </div>
+        <div class="admin-entry-details">
+          <span class="admin-detail-item">
+            <span class="admin-detail-label">Email</span>${s.email}
+          </span>
+          <span class="admin-detail-item">
+            <span class="admin-detail-label">Phone</span>${s.phone}
+          </span>
+          ${s.message ? `<p class="admin-msg"><span class="admin-msg-label">Msg:</span>${s.message}</p>` : ''}
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // Keyboard shortcut: Ctrl+Shift+A
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.shiftKey && e.key === 'A') {
+      e.preventDefault();
+      const panel = document.getElementById('admin-panel-modal');
+      if (panel.classList.contains('cf-active')) {
+        closeModal('admin-panel-modal');
+      } else {
+        renderAdminList();
+        openModal('admin-panel-modal');
+      }
+    }
+  });
+
+  // Export CSV
+  document.getElementById('btn-export-csv')?.addEventListener('click', () => {
+    const all = getSubmissions();
+    if (all.length === 0) { alert('No submissions to export.'); return; }
+    const header = 'Name,Email,Phone,Message,Time';
+    const rows = all.map(s =>
+      [s.name, s.email, s.phone, (s.message || '').replace(/,/g,'|'), s.time]
+        .map(v => `"${v}"`).join(',')
+    );
+    const csv  = [header, ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `portfolio_visitors_${Date.now()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  // Clear all
+  document.getElementById('btn-clear-all')?.addEventListener('click', () => {
+    if (confirm('Delete ALL visitor submissions? This cannot be undone.')) {
+      saveSubmissions([]);
+      renderAdminList();
+    }
+  });
 })();
